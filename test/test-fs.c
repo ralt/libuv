@@ -66,6 +66,7 @@ static int write_cb_count;
 static int unlink_cb_count;
 static int mkdir_cb_count;
 static int mkdtemp_cb_count;
+static int mkstemp_cb_count;
 static int rmdir_cb_count;
 static int scandir_cb_count;
 static int stat_cb_count;
@@ -98,6 +99,9 @@ static uv_fs_t close_req;
 static uv_fs_t mkdir_req;
 static uv_fs_t mkdtemp_req1;
 static uv_fs_t mkdtemp_req2;
+static uv_fs_t mkstemp_req1;
+static uv_fs_t mkstemp_req2;
+static uv_fs_t mkstemp_req3;
 static uv_fs_t rmdir_req;
 static uv_fs_t scandir_req;
 static uv_fs_t stat_req;
@@ -443,6 +447,33 @@ static void mkdtemp_cb(uv_fs_t* req) {
   ASSERT(req == &mkdtemp_req1);
   check_mkdtemp_result(req);
   mkdtemp_cb_count++;
+}
+
+
+static void check_mkstemp_result(uv_fs_t* req) {
+  int r;
+
+  ASSERT(req->fs_type == UV_FS_MKSTEMP);
+  /* There's no cross-OS way to check an fd is valid */
+  ASSERT(req->result >= 0);
+  ASSERT(req->path);
+  ASSERT(strlen(req->path) == 16);
+  ASSERT(memcmp(req->path, "test_file_", 10) == 0);
+  ASSERT(memcmp(req->path + 10, "XXXXXX", 6) != 0);
+  check_permission(req->path, 0600);
+
+  /* Check if req->path is actually a file */
+  r = uv_fs_stat(NULL, &stat_req, req->path, NULL);
+  ASSERT(r == 0);
+  ASSERT(((uv_stat_t*)stat_req.ptr)->st_mode & S_IFREG);
+  uv_fs_req_cleanup(&stat_req);
+}
+
+
+static void mkstemp_cb(uv_fs_t* req) {
+  ASSERT(req == &mkstemp_req1);
+  check_mkstemp_result(req);
+  mkstemp_cb_count++;
 }
 
 
@@ -1063,6 +1094,43 @@ TEST_IMPL(fs_mkdtemp) {
   rmdir(mkdtemp_req2.path);
   uv_fs_req_cleanup(&mkdtemp_req1);
   uv_fs_req_cleanup(&mkdtemp_req2);
+
+  MAKE_VALGRIND_HAPPY();
+  return 0;
+}
+
+
+TEST_IMPL(fs_mkstemp) {
+  int r;
+  const char* path_template = "test_file_XXXXXX";
+
+  loop = uv_default_loop();
+
+  r = uv_fs_mkstemp(loop, &mkstemp_req1, path_template, mkstemp_cb);
+  ASSERT(r == 0);
+
+  uv_run(loop, UV_RUN_DEFAULT);
+  ASSERT(mkstemp_cb_count == 1);
+
+  /* sync mkstemp */
+  r = uv_fs_mkstemp(NULL, &mkstemp_req2, path_template, NULL);
+  /* There's no cross-OS way to check an fd is valid */
+  ASSERT(r >= 0);
+  check_mkstemp_result(&mkstemp_req2);
+
+  /* mkstemp return different values on subsequent calls */
+  ASSERT(strcmp(mkstemp_req1.path, mkstemp_req2.path) != 0);
+
+  /* invalid template returns EINVAL */
+  ASSERT(uv_fs_mkstemp(NULL, &mkstemp_req3, "test_file", NULL) == UV_EINVAL);
+
+  /* Cleanup */
+  uv_fs_close(NULL, &mkstemp_req1, mkstemp_req1.file, NULL);
+  uv_fs_close(NULL, &mkstemp_req2, mkstemp_req2.file, NULL);
+  unlink(mkstemp_req1.path);
+  unlink(mkstemp_req2.path);
+  uv_fs_req_cleanup(&mkstemp_req1);
+  uv_fs_req_cleanup(&mkstemp_req2);
 
   MAKE_VALGRIND_HAPPY();
   return 0;
