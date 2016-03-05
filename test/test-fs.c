@@ -1101,8 +1101,11 @@ TEST_IMPL(fs_mkdtemp) {
 
 
 TEST_IMPL(fs_mkstemp) {
+  ssize_t wr;
   int r;
+  int fd;
   const char* path_template = "test_file_XXXXXX";
+  uv_fs_t req;
 
   loop = uv_default_loop();
 
@@ -1124,9 +1127,32 @@ TEST_IMPL(fs_mkstemp) {
   /* invalid template returns EINVAL */
   ASSERT(uv_fs_mkstemp(NULL, &mkstemp_req3, "test_file", NULL) == UV_EINVAL);
 
+  do {
+    wr = write(mkstemp_req1.result, "X", 1);
+  } while (wr == -1 && errno ==  EINTR);
+  ASSERT(wr == 1);
+
   /* Cleanup */
-  uv_fs_close(NULL, &mkstemp_req1, mkstemp_req1.file, NULL);
-  uv_fs_close(NULL, &mkstemp_req2, mkstemp_req2.file, NULL);
+  uv_fs_close(NULL, &req, mkstemp_req1.result, NULL);
+  uv_fs_req_cleanup(&req);
+  uv_fs_close(NULL, &req, mkstemp_req2.result, NULL);
+  uv_fs_req_cleanup(&req);
+
+  fd = uv_fs_open(NULL, &req, mkstemp_req1.path , O_RDONLY, 0, NULL);
+  ASSERT(fd >= 0);
+  uv_fs_req_cleanup(&req);
+
+  memset(buf, 0, sizeof(buf));
+  iov = uv_buf_init(buf, sizeof(buf));
+  r = uv_fs_read(NULL, &req, fd, &iov, 1, -1, NULL);
+  ASSERT(r >= 0);
+  ASSERT(req.result == 1);
+  ASSERT(buf[0] == 'X');
+  uv_fs_req_cleanup(&req);
+
+  uv_fs_close(NULL, &req, fd, NULL);
+  uv_fs_req_cleanup(&req);
+
   unlink(mkstemp_req1.path);
   unlink(mkstemp_req2.path);
   uv_fs_req_cleanup(&mkstemp_req1);
