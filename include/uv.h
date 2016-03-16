@@ -1095,6 +1095,7 @@ typedef enum {
   UV_FS_RMDIR,
   UV_FS_MKDIR,
   UV_FS_MKDTEMP,
+  UV_FS_MKSTEMP,
   UV_FS_RENAME,
   UV_FS_SCANDIR,
   UV_FS_LINK,
@@ -1113,7 +1114,7 @@ struct uv_fs_s {
   uv_fs_cb cb;
   ssize_t result;
   void* ptr;
-  const char* path;
+  char* path;
   uv_stat_t statbuf;  /* Stores the result of uv_fs_stat() and uv_fs_fstat(). */
   UV_FS_PRIVATE_FIELDS
 };
@@ -1153,6 +1154,10 @@ UV_EXTERN int uv_fs_mkdir(uv_loop_t* loop,
                           int mode,
                           uv_fs_cb cb);
 UV_EXTERN int uv_fs_mkdtemp(uv_loop_t* loop,
+                            uv_fs_t* req,
+                            const char* tpl,
+                            uv_fs_cb cb);
+UV_EXTERN int uv_fs_mkstemp(uv_loop_t* loop,
                             uv_fs_t* req,
                             const char* tpl,
                             uv_fs_cb cb);
